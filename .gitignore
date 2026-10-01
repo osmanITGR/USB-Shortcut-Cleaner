@@ -1,0 +1,10 @@
+# Build / temporary files
+*.obj
+*.pdb
+crash.log
+
+# OS generated
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
