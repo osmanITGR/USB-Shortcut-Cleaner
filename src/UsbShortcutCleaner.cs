@@ -25,9 +25,9 @@ using Microsoft.Win32.SafeHandles;
 [assembly: AssemblyTitle("USB Shortcut Virus Cleaner & Restorer")]
 [assembly: AssemblyProduct("USB Shortcut Cleaner")]
 [assembly: AssemblyCompany("Md Osman")]
-[assembly: AssemblyCopyright("Copyright (c) 2026 Md Osman. MIT License.")]
-[assembly: AssemblyVersion("2.1.0.0")]
-[assembly: AssemblyFileVersion("2.1.0.0")]
+[assembly: AssemblyCopyright("Copyright (c) 2026 Md Osman (WhatsApp: +8801625251930). MIT License.")]
+[assembly: AssemblyVersion("2.1.1.0")]
+[assembly: AssemblyFileVersion("2.1.1.0")]
 
 namespace USBShortcutCleaner
 {
@@ -1023,7 +1023,7 @@ namespace USBShortcutCleaner
         static readonly Color CleanColor = Color.FromArgb(16, 185, 129);
         static readonly Color StopColor = Color.FromArgb(220, 38, 38);
 
-        Label lblTitle, lblSub, lblSelect, lblStatus;
+        Label lblTitle, lblSub, lblSelect, lblStatus, lblCopyright;
         LinkLabel lnkUpdate;
         ComboBox cmbDrives;
         Button btnRefresh, btnClean, btnOpen;
@@ -1073,7 +1073,7 @@ namespace USBShortcutCleaner
         void InitializeComponent()
         {
             Text = "USB Shortcut Virus Cleaner & Restorer v" + Updater.CurrentVersion.ToString(3) + (isAdmin ? " (Administrator)" : "");
-            ClientSize = new Size(666, 588);
+            ClientSize = new Size(666, 610);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -1207,8 +1207,16 @@ namespace USBShortcutCleaner
                 Size = new Size(615, 24)
             };
             chkAutoUpdate.CheckedChanged += delegate { Updater.AutoCheckEnabled = chkAutoUpdate.Checked; };
+            lblCopyright = new Label
+            {
+                Text = "© 2026 Md Osman  ·  WhatsApp: +8801625251930",
+                UseMnemonic = false,
+                ForeColor = Color.FromArgb(100, 116, 139),
+                Location = new Point(24, 584),
+                Size = new Size(618, 20)
+            };
 
-            Controls.AddRange(new Control[] { lblTitle, lnkUpdate, lblSub, lblSelect, cmbDrives, btnRefresh, chkCleanPc, btnClean, btnOpen, lblStatus, progressBar, txtLog, chkAutoUpdate });
+            Controls.AddRange(new Control[] { lblTitle, lnkUpdate, lblSub, lblSelect, cmbDrives, btnRefresh, chkCleanPc, btnClean, btnOpen, lblStatus, progressBar, txtLog, chkAutoUpdate, lblCopyright });
 
             worker = new BackgroundWorker { WorkerSupportsCancellation = true };
             worker.DoWork += Worker_DoWork;

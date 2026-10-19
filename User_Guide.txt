@@ -27,6 +27,9 @@
 - নিজে দেখতে চাইলে **"Check for updates"**-এ ক্লিক করুন।
 - নিচের "Check for new versions when the program starts" টিক তুলে দিলে স্বয়ংক্রিয় চেক বন্ধ থাকবে।
 
+## যোগাযোগ:
+© 2026 Md Osman — WhatsApp: +8801625251930
+
 ## ডাউনলোড:
 সর্বশেষ ভার্সন: https://github.com/osmanITGR/USB-Shortcut-Cleaner/releases
 

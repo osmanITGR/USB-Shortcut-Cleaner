@@ -45,4 +45,4 @@ The program connects only to GitHub (`api.github.com` and `github.com`) to check
 
 ## License
 
-[MIT](LICENSE)
+Copyright (c) 2026 Md Osman. Contact: WhatsApp +8801625251930. Released under the [MIT License](LICENSE).
