@@ -70,4 +70,9 @@ jobs:
         run: |
           $exe = 'USB_Shortcut_Cleaner.exe'
           if (Test-Path "signed/$exe") { $exe = "signed/$exe"; "Releasing the signed exe" } else { "Releasing the unsigned exe" }
-          gh release create $env:GITHUB_REF_NAME $exe --title "USB Shortcut Cleaner $env:GITHUB_REF_NAME" --generate-notes
+          $notes = @"
+          Removes USB shortcut viruses from pendrives and memory cards and restores the hidden files. Portable - just download and run ``USB_Shortcut_Cleaner.exe`` (Windows 7 SP1 to 11). See the [README](https://github.com/$env:GITHUB_REPOSITORY#readme) for details.
+
+          [Code signing policy](https://github.com/$env:GITHUB_REPOSITORY#code-signing-policy)
+          "@
+          gh release create $env:GITHUB_REF_NAME $exe --title "USB Shortcut Cleaner $env:GITHUB_REF_NAME" --notes $notes --generate-notes
