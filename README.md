@@ -20,13 +20,15 @@ Only USB pendrives, memory cards and USB hard disks are listed. Internal disks a
 
 Get `USB_Shortcut_Cleaner.exe` from the [Releases](https://github.com/osmanITGR/USB-Shortcut-Cleaner/releases) page. It needs no installation and runs on Windows 7 SP1 (with .NET Framework 4), 8, 8.1, 10 and 11.
 
+**Updates install from inside the program.** When a new version is released, "Update available" appears at the top right. One click downloads it from this repository's Releases, checks its SHA-256 against the value GitHub publishes, replaces the exe and restarts. No browser is needed. "Check for updates" checks on demand.
+
 The program asks for administrator rights when the account allows it. They are needed to stop elevated virus processes and to clean machine-wide startup entries. Cleaning the USB drive itself also works without them.
 
 ## Build from source
 
 Run `build.bat`. It uses the C# compiler that ships with the .NET Framework on every Windows PC, so nothing needs to be installed. The source is in [src/UsbShortcutCleaner.cs](src/UsbShortcutCleaner.cs).
 
-Release builds are made by [GitHub Actions](.github/workflows/build.yml) from the tagged source, and code signing runs in the same workflow (see below). To publish a release, set the version in `src/UsbShortcutCleaner.cs` and push a matching tag, for example `v2.0.0`.
+Release builds are made by [GitHub Actions](.github/workflows/build.yml) from the tagged source, and code signing runs in the same workflow (see below). To publish a release, set the version in `src/UsbShortcutCleaner.cs` and push a matching tag, for example `v2.1.0`. The in-app updater looks for the asset named `USB_Shortcut_Cleaner.exe` on the latest release, so keep that file name.
 
 ## Code signing policy
 
@@ -39,7 +41,7 @@ Only binaries built by GitHub Actions from this repository's source are signed, 
 
 ## Privacy policy
 
-This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+The program connects only to GitHub (`api.github.com` and `github.com`) to check for and download new versions of itself. It sends no personal data and nothing about your files. GitHub sees an ordinary web request, which includes your IP address and the program's version, and [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement) applies to it. The automatic check at startup can be turned off with the "Check for new versions when the program starts" option. Apart from this, the program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
 
 ## License
 

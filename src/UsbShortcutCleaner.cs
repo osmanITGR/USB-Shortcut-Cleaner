@@ -9,11 +9,14 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Management;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
@@ -23,8 +26,8 @@ using Microsoft.Win32.SafeHandles;
 [assembly: AssemblyProduct("USB Shortcut Cleaner")]
 [assembly: AssemblyCompany("Md Osman")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 Md Osman. MIT License.")]
-[assembly: AssemblyVersion("2.0.0.0")]
-[assembly: AssemblyFileVersion("2.0.0.0")]
+[assembly: AssemblyVersion("2.1.0.0")]
+[assembly: AssemblyFileVersion("2.1.0.0")]
 
 namespace USBShortcutCleaner
 {
@@ -810,15 +813,221 @@ namespace USBShortcutCleaner
         }
     }
 
+    public class UpdateInfo
+    {
+        public Version Version;
+        public string Tag;
+        public string DownloadUrl;
+        public string Sha256; // lowercase hex from GitHub's asset digest, null if GitHub did not provide one
+        public long Size;
+    }
+
+    // In-app updates from this project's GitHub releases, so users never need a browser.
+    // The release must contain an asset named USB_Shortcut_Cleaner.exe (the build workflow does this).
+    public static class Updater
+    {
+        public const string Repository = "osmanITGR/USB-Shortcut-Cleaner";
+        public const string AssetName = "USB_Shortcut_Cleaner.exe";
+        public const string ProductName = "USB Shortcut Cleaner";
+        const string SettingsKey = @"Software\USB Shortcut Cleaner";
+        const long MaxDownloadBytes = 50L * 1024 * 1024;
+
+        public static Version CurrentVersion
+        {
+            get { return Normalize(Assembly.GetExecutingAssembly().GetName().Version); }
+        }
+
+        public static string ExePath
+        {
+            get { return Assembly.GetExecutingAssembly().Location; }
+        }
+
+        public static bool AutoCheckEnabled
+        {
+            get
+            {
+                try
+                {
+                    using (RegistryKey k = Registry.CurrentUser.OpenSubKey(SettingsKey))
+                        return k == null || Convert.ToInt32(k.GetValue("CheckForUpdates", 1)) != 0;
+                }
+                catch { return true; }
+            }
+            set
+            {
+                try
+                {
+                    using (RegistryKey k = Registry.CurrentUser.CreateSubKey(SettingsKey))
+                        k.SetValue("CheckForUpdates", value ? 1 : 0, RegistryValueKind.DWord);
+                }
+                catch { }
+            }
+        }
+
+        static Version Normalize(Version v)
+        {
+            return new Version(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
+        }
+
+        public static Version ParseVersion(string text)
+        {
+            Version v;
+            string s = (text ?? "").Trim().TrimStart('v', 'V');
+            return Version.TryParse(s, out v) ? Normalize(v) : null;
+        }
+
+        static HttpWebRequest CreateRequest(string url)
+        {
+            // GitHub only accepts TLS 1.2+; apps built for .NET 4.0 don't enable it by default.
+            try { ServicePointManager.SecurityProtocol = (SecurityProtocolType)(3072 | 768 | 192); } catch { }
+            var request = (HttpWebRequest)WebRequest.Create(url);
+            request.UserAgent = "USB-Shortcut-Cleaner/" + CurrentVersion.ToString(3);
+            request.Timeout = 15000;
+            request.ReadWriteTimeout = 30000;
+            return request;
+        }
+
+        // The latest published release (GitHub skips drafts and pre-releases), or null if it has no usable exe.
+        public static UpdateInfo GetLatestRelease()
+        {
+            HttpWebRequest request = CreateRequest("https://api.github.com/repos/" + Repository + "/releases/latest");
+            request.Accept = "application/vnd.github+json";
+            string json;
+            using (var response = (HttpWebResponse)request.GetResponse())
+            using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                json = reader.ReadToEnd();
+
+            var release = new JavaScriptSerializer().DeserializeObject(json) as Dictionary<string, object>;
+            if (release == null || !release.ContainsKey("tag_name") || !release.ContainsKey("assets")) return null;
+            var info = new UpdateInfo { Tag = release["tag_name"] as string };
+            info.Version = ParseVersion(info.Tag);
+
+            var assets = release["assets"] as object[];
+            if (assets != null)
+                foreach (object o in assets)
+                {
+                    var asset = o as Dictionary<string, object>;
+                    if (asset == null || !AssetName.Equals(asset["name"] as string, StringComparison.OrdinalIgnoreCase)) continue;
+                    info.DownloadUrl = asset["browser_download_url"] as string;
+                    info.Size = Convert.ToInt64(asset["size"]);
+                    string digest = asset.ContainsKey("digest") ? asset["digest"] as string : null;
+                    if (digest != null && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                        info.Sha256 = digest.Substring(7).ToLowerInvariant();
+                }
+            return info.Version == null || info.DownloadUrl == null ? null : info;
+        }
+
+        // Downloads the update next to the running exe and verifies it. Returns the verified file's path.
+        public static string Download(UpdateInfo info, string exePath, Action<int> progress)
+        {
+            if (!info.DownloadUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Refusing to download the update over an insecure connection.");
+            string target = exePath + ".new";
+            try
+            {
+                using (var response = (HttpWebResponse)CreateRequest(info.DownloadUrl).GetResponse())
+                using (Stream input = response.GetResponseStream())
+                using (var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    long total = response.ContentLength > 0 ? response.ContentLength : info.Size;
+                    var buffer = new byte[81920];
+                    long done = 0;
+                    int n;
+                    while ((n = input.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        output.Write(buffer, 0, n);
+                        done += n;
+                        if (done > MaxDownloadBytes) throw new InvalidDataException("The download is unexpectedly large.");
+                        if (progress != null && total > 0) progress((int)Math.Min(100, done * 100 / total));
+                    }
+                }
+                Verify(target, info);
+                return target;
+            }
+            catch
+            {
+                TryDelete(target);
+                throw;
+            }
+        }
+
+        public static void Verify(string file, UpdateInfo info)
+        {
+            if (info.Size > 0 && new FileInfo(file).Length != info.Size)
+                throw new InvalidDataException("The downloaded file is incomplete.");
+            if (info.Sha256 != null)
+            {
+                string hash;
+                using (var sha = new SHA256CryptoServiceProvider())
+                using (FileStream s = File.OpenRead(file))
+                    hash = BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "").ToLowerInvariant();
+                if (hash != info.Sha256) throw new InvalidDataException("The downloaded file is damaged (SHA-256 does not match).");
+            }
+            FileVersionInfo v = FileVersionInfo.GetVersionInfo(file);
+            if (v.ProductName != ProductName || ParseVersion(v.ProductVersion) != info.Version)
+                throw new InvalidDataException("The downloaded file is not " + ProductName + " " + info.Tag + ".");
+        }
+
+        // A running exe cannot be overwritten, but it can be renamed: move it aside and put the new one in its place.
+        public static void Swap(string newFile, string exePath)
+        {
+            string old = exePath + ".old";
+            TryDelete(old);
+            File.Move(exePath, old);
+            try { File.Move(newFile, exePath); }
+            catch
+            {
+                File.Move(old, exePath);
+                throw;
+            }
+        }
+
+        public static void UndoSwap(string newFile, string exePath)
+        {
+            File.Move(exePath, newFile);
+            File.Move(exePath + ".old", exePath);
+        }
+
+        // Removes the previous version once it has exited (it may still be closing right after an update).
+        // A ".new" file is only removed when stale, so another open window's fresh download is left alone.
+        public static void DeleteLeftovers(string exePath)
+        {
+            string stale = exePath + ".new";
+            try
+            {
+                if (File.Exists(stale) && DateTime.UtcNow - File.GetLastWriteTimeUtc(stale) > TimeSpan.FromHours(1)) TryDelete(stale);
+            }
+            catch { }
+
+            for (int i = 0; i < 20 && File.Exists(exePath + ".old"); i++)
+            {
+                TryDelete(exePath + ".old");
+                if (File.Exists(exePath + ".old")) System.Threading.Thread.Sleep(500);
+            }
+        }
+
+        static void TryDelete(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                File.SetAttributes(path, FileAttributes.Normal);
+                File.Delete(path);
+            }
+            catch { }
+        }
+    }
+
     public class MainForm : Form
     {
         static readonly Color CleanColor = Color.FromArgb(16, 185, 129);
         static readonly Color StopColor = Color.FromArgb(220, 38, 38);
 
         Label lblTitle, lblSub, lblSelect, lblStatus;
+        LinkLabel lnkUpdate;
         ComboBox cmbDrives;
         Button btnRefresh, btnClean, btnOpen;
-        CheckBox chkCleanPc;
+        CheckBox chkCleanPc, chkAutoUpdate;
         ProgressBar progressBar;
         TextBox txtLog;
         BackgroundWorker worker;
@@ -830,12 +1039,16 @@ namespace USBShortcutCleaner
         string pendingStatus;
         int pendingPercent = -1;
         bool loadingDrives, drivesChangedWhileBusy, closeWhenDone;
+        UpdateInfo availableUpdate;
+        bool checkingUpdate, updating;
+        static bool startedAfterUpdate;
 
         [STAThread]
         static void Main()
         {
             try
             {
+                startedAfterUpdate = Array.IndexOf(Environment.GetCommandLineArgs(), "--updated") > 0;
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new MainForm());
@@ -859,8 +1072,8 @@ namespace USBShortcutCleaner
 
         void InitializeComponent()
         {
-            Text = "USB Shortcut Virus Cleaner & Restorer" + (isAdmin ? " (Administrator)" : "");
-            ClientSize = new Size(666, 572);
+            Text = "USB Shortcut Virus Cleaner & Restorer v" + Updater.CurrentVersion.ToString(3) + (isAdmin ? " (Administrator)" : "");
+            ClientSize = new Size(666, 588);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -873,8 +1086,17 @@ namespace USBShortcutCleaner
                 Font = new Font("Segoe UI", 15f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(15, 23, 42),
                 Location = new Point(24, 18),
-                Size = new Size(620, 32)
+                Size = new Size(420, 32)
             };
+            lnkUpdate = new LinkLabel
+            {
+                Text = "Check for updates",
+                TextAlign = ContentAlignment.MiddleRight,
+                UseMnemonic = false,
+                Location = new Point(444, 24),
+                Size = new Size(198, 22)
+            };
+            lnkUpdate.LinkClicked += LnkUpdate_LinkClicked;
             lblSub = new Label
             {
                 Text = "One-click tool to remove shortcut viruses and restore all hidden files.",
@@ -976,8 +1198,17 @@ namespace USBShortcutCleaner
                 Location = new Point(24, 290),
                 Size = new Size(618, 260)
             };
+            chkAutoUpdate = new CheckBox
+            {
+                Text = "Check for new versions when the program starts (contacts github.com)",
+                Checked = Updater.AutoCheckEnabled,
+                ForeColor = Color.FromArgb(71, 85, 105),
+                Location = new Point(26, 558),
+                Size = new Size(615, 24)
+            };
+            chkAutoUpdate.CheckedChanged += delegate { Updater.AutoCheckEnabled = chkAutoUpdate.Checked; };
 
-            Controls.AddRange(new Control[] { lblTitle, lblSub, lblSelect, cmbDrives, btnRefresh, chkCleanPc, btnClean, btnOpen, lblStatus, progressBar, txtLog });
+            Controls.AddRange(new Control[] { lblTitle, lnkUpdate, lblSub, lblSelect, cmbDrives, btnRefresh, chkCleanPc, btnClean, btnOpen, lblStatus, progressBar, txtLog, chkAutoUpdate });
 
             worker = new BackgroundWorker { WorkerSupportsCancellation = true };
             worker.DoWork += Worker_DoWork;
@@ -1002,9 +1233,14 @@ namespace USBShortcutCleaner
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+            if (startedAfterUpdate) Log("Updated successfully to v" + Updater.CurrentVersion.ToString(3) + ".");
             Log("Ready. Only USB drives and memory cards are listed - internal disks are never touched.");
             if (!isAdmin) Log("Note: not running as administrator. Cleaning the USB works; some PC cleanup may need 'Run as administrator'.");
             LoadDrives();
+
+            string exe = Updater.ExePath;
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate { Updater.DeleteLeftovers(exe); });
+            if (chkAutoUpdate.Checked) CheckForUpdates(false);
         }
 
         protected override void WndProc(ref Message m)
@@ -1078,13 +1314,131 @@ namespace USBShortcutCleaner
 
         void UpdateButtons()
         {
-            bool busy = worker != null && worker.IsBusy;
+            bool cleaning = worker != null && worker.IsBusy;
+            bool busy = cleaning || updating;
             bool hasDrive = cmbDrives.SelectedItem != null;
             cmbDrives.Enabled = !busy;
             chkCleanPc.Enabled = !busy;
             btnRefresh.Enabled = !busy && !loadingDrives;
             btnOpen.Enabled = hasDrive;
-            if (!busy) btnClean.Enabled = hasDrive;
+            if (!cleaning) btnClean.Enabled = hasDrive && !updating;
+            if (lnkUpdate != null) lnkUpdate.Enabled = !busy;
+        }
+
+        // ---------- updates ----------
+
+        void CheckForUpdates(bool userRequested)
+        {
+            if (checkingUpdate) return;
+            checkingUpdate = true;
+            if (userRequested) lnkUpdate.Text = "Checking...";
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                UpdateInfo info = null;
+                Exception error = null;
+                try { info = Updater.GetLatestRelease(); }
+                catch (Exception ex) { error = ex; }
+                try { BeginInvoke(new Action(() => UpdateCheckDone(info, error, userRequested))); }
+                catch (InvalidOperationException) { } // form already closed
+            });
+        }
+
+        void UpdateCheckDone(UpdateInfo info, Exception error, bool userRequested)
+        {
+            checkingUpdate = false;
+            if (info != null && info.Version > Updater.CurrentVersion)
+            {
+                availableUpdate = info;
+                lnkUpdate.Text = "Update available: " + info.Tag;
+                lnkUpdate.Font = new Font(lnkUpdate.Font, FontStyle.Bold);
+                lnkUpdate.LinkColor = CleanColor;
+                Log("A new version " + info.Tag + " is available - click 'Update available' at the top right to install it.");
+                if (userRequested) StartUpdate();
+                return;
+            }
+
+            lnkUpdate.Text = "Check for updates";
+            if (!userRequested) return;
+            if (error != null)
+                MessageBox.Show(this, "Could not check for updates: " + error.Message + "\n\nPlease check the internet connection and try again.",
+                    "Update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            else
+                MessageBox.Show(this, "You already have the latest version (v" + Updater.CurrentVersion.ToString(3) + ").",
+                    "Update", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        void LnkUpdate_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            if (worker.IsBusy || updating) return;
+            if (availableUpdate != null) StartUpdate(); else CheckForUpdates(true);
+        }
+
+        void StartUpdate()
+        {
+            UpdateInfo info = availableUpdate;
+            string question = "Version " + info.Tag + " is available (you have v" + Updater.CurrentVersion.ToString(3) + ").\n\n"
+                + "Download and install it now? The program will restart.";
+            if (MessageBox.Show(this, question, "Update", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            updating = true;
+            UpdateButtons();
+            progressBar.Value = 0;
+            lblStatus.Text = "Downloading update...";
+            Log("Downloading " + info.Tag + " from GitHub...");
+            string exe = Updater.ExePath;
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                string file = null;
+                Exception error = null;
+                try
+                {
+                    file = Updater.Download(info, exe, percent =>
+                    {
+                        lock (statusLock)
+                        {
+                            pendingPercent = percent;
+                            pendingStatus = "Downloading update... " + percent + "%";
+                        }
+                    });
+                }
+                catch (Exception ex) { error = ex; }
+                try { BeginInvoke(new Action(() => FinishUpdate(info, exe, file, error))); }
+                catch (InvalidOperationException) { } // form already closed; the leftover is removed on next start
+            });
+        }
+
+        void FinishUpdate(UpdateInfo info, string exe, string file, Exception error)
+        {
+            FlushUi();
+            if (error == null)
+            {
+                try
+                {
+                    Updater.Swap(file, exe);
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(exe) });
+                    }
+                    catch
+                    {
+                        Updater.UndoSwap(file, exe);
+                        throw;
+                    }
+                    Close();
+                    return;
+                }
+                catch (Exception ex) { error = ex; }
+            }
+
+            updating = false;
+            UpdateButtons();
+            progressBar.Value = 0;
+            lblStatus.Text = "Update failed.";
+            Log("Update failed: " + error.Message);
+            string hint = error is UnauthorizedAccessException
+                ? "\n\nThis folder is read-only for your account. Run the program as administrator, or move it to another folder (for example the Desktop) and try again."
+                : "";
+            MessageBox.Show(this, "Could not install the update: " + error.Message + hint, "Update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         void Log(string message)
