@@ -8,3 +8,7 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# Built by build.bat / GitHub Actions - releases carry the (signed) exe
+*.exe
+signed/

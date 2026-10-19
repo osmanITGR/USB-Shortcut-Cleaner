@@ -1,0 +1,73 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 240
+    permissions:
+      contents: write # create the GitHub release on tag pushes
+      actions: read   # SignPath reads the job details and the uploaded artifact
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        shell: cmd
+        run: build.bat
+
+      - name: Check version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Get-Item USB_Shortcut_Cleaner.exe).VersionInfo.ProductVersion
+          "Product version: $v"
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $tag = $env:GITHUB_REF_NAME.TrimStart('v')
+            if ($tag.Split('.').Count -eq 3) { $tag += '.0' }
+            if ($tag -ne $v) { throw "Tag $env:GITHUB_REF_NAME does not match the exe version $v (AssemblyVersion in src/UsbShortcutCleaner.cs)" }
+          }
+          "product-version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Upload unsigned build
+        id: upload-unsigned
+        uses: actions/upload-artifact@v7
+        with:
+          name: USB_Shortcut_Cleaner-unsigned
+          path: USB_Shortcut_Cleaner.exe
+          if-no-files-found: error
+
+      # Runs only for release tags, and only once the SignPath project is set up
+      # (repository variables SIGNPATH_ORGANIZATION_ID etc. and secret SIGNPATH_API_TOKEN).
+      - name: Sign with SignPath
+        if: github.ref_type == 'tag' && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 10800 # each release is approved manually
+          output-artifact-directory: signed
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.product-version) }}
+
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exe = 'USB_Shortcut_Cleaner.exe'
+          if (Test-Path "signed/$exe") { $exe = "signed/$exe"; "Releasing the signed exe" } else { "Releasing the unsigned exe" }
+          gh release create $env:GITHUB_REF_NAME $exe --title "USB Shortcut Cleaner $env:GITHUB_REF_NAME" --generate-notes

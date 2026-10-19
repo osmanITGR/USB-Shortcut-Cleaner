@@ -1,42 +1,46 @@
-# USB Shortcut Virus Cleaner & Restorer
+# USB Shortcut Cleaner
 
-A lightweight, portable, native Windows GUI application to permanently remove USB shortcut viruses (`.vbs`, `.lnk`, `sysvolume`, `autorun.inf`) and instantly restore all hidden/system files and directories.
+A small, portable Windows tool that removes USB "shortcut viruses" from pendrives and memory cards and brings back the files the virus hid.
 
----
+বাংলা ব্যবহার নির্দেশিকা: [User_Guide.txt](User_Guide.txt)
 
-## 🌟 Features
+## What it does
 
-- **100% Native & Portable**: Single standalone executable (`.exe`), zero external dependencies, no installation needed.
-- **Universal Windows Support**: Runs on Windows 7, 8, 8.1, 10, and 11 (supports both 32-bit and 64-bit systems).
-- **Auto-Detection**: Automatically detects plugged-in removable/USB drives with free space and volume names.
-- **Rogue Script Killer**: Automatically terminates malicious active background script engines (`wscript.exe`, `cscript.exe`) locking USB files.
-- **Malware Purging**: Completely deletes fake shortcut files (`*.lnk`), payload directories (`sysvolume`, `drive`, `WindowsServices`, `recycler`), and `autorun.inf`.
-- **Deep File Recovery**: Recursively unhides all hidden, system-protected, and read-only files and folders.
-- **Volume Directory Restorer**: Automatically detects if files were hidden inside a subfolder matching the drive volume label and restores them directly to the drive root.
-- **Responsive UI**: Multi-threaded with real-time progress bar, detailed log console, and one-click Explorer button.
+A shortcut virus hides everything on a pendrive and replaces it with shortcuts (`.lnk`) that run the virus every time you open them. One click on **Scan & Clean USB Drive**:
 
----
+1. Stops running virus scripts (`wscript`, `cscript`, `mshta`, and hidden programs started from the USB drive).
+2. Optionally removes the virus from this PC's startup (`Run`/`RunOnce` registry entries and Startup folder items that launch scripts), so it cannot re-infect the drive. Every removed entry is written to the log.
+3. Deletes the fake shortcuts, `autorun.inf`, virus scripts and virus folders (`sysvolume`, `WindowsServices`, and hidden `drive`/`Recycle`/`RECYCLER` folders that contain scripts or programs).
+4. Moves your files back out of the virus's hiding folder: a folder with an invisible name (non-breaking space and similar) or a hidden folder named after the drive label. If a file with the same name already exists, the restored one is renamed to `name (restored)`. Nothing is overwritten.
+5. Unhides all files and folders. Junctions and symlinks are never followed.
 
-## 🚀 How to Run
+Only USB pendrives, memory cards and USB hard disks are listed. Internal disks are never offered.
 
-1. Download or run **`USB_Shortcut_Cleaner.exe`**.
-2. Select your USB drive from the dropdown.
-3. Click **"Scan & Clean USB Drive"**.
-4. Once completed, click **"Open in Explorer"** to view your recovered files.
+## Download
 
----
+Get `USB_Shortcut_Cleaner.exe` from the [Releases](https://github.com/osmanITGR/USB-Shortcut-Cleaner/releases) page. It needs no installation and runs on Windows 7 SP1 (with .NET Framework 4), 8, 8.1, 10 and 11.
 
-## 🛠️ How to Build from Source
+The program asks for administrator rights when the account allows it. They are needed to stop elevated virus processes and to clean machine-wide startup entries. Cleaning the USB drive itself also works without them.
 
-This project requires only the built-in Microsoft C# compiler (`csc.exe`) included with any Windows .NET Framework 4.0+.
+## Build from source
 
-Run `build.bat` or execute in Command Prompt:
+Run `build.bat`. It uses the C# compiler that ships with the .NET Framework on every Windows PC, so nothing needs to be installed. The source is in [src/UsbShortcutCleaner.cs](src/UsbShortcutCleaner.cs).
 
-```cmd
-C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:winexe /optimize+ /platform:anycpu /r:System.dll,System.Windows.Forms.dll,System.Drawing.dll /out:USB_Shortcut_Cleaner.exe Program.cs
-```
+Release builds are made by [GitHub Actions](.github/workflows/build.yml) from the tagged source, and code signing runs in the same workflow (see below). To publish a release, set the version in `src/UsbShortcutCleaner.cs` and push a matching tag, for example `v2.0.0`.
 
----
+## Code signing policy
 
-## 📄 License
-Open source under the [MIT License](LICENSE).
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- Committers and reviewers: [osmanITGR](https://github.com/osmanITGR)
+- Approvers: [osmanITGR](https://github.com/osmanITGR)
+
+Only binaries built by GitHub Actions from this repository's source are signed, and every signing request is approved manually.
+
+## Privacy policy
+
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+
+## License
+
+[MIT](LICENSE)

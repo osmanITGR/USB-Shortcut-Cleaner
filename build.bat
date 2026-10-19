@@ -1,20 +1,15 @@
 @echo off
-title Build USB Shortcut Cleaner
-echo Compiling USB_Shortcut_Cleaner.exe using native csc.exe ...
+rem Builds USB_Shortcut_Cleaner.exe with the C# compiler that ships with Windows (.NET Framework 4.x).
+cd /d "%~dp0"
+set "CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+if not exist "%CSC%" set "CSC=%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 
-if exist "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" (
-    set CSC=C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe
-) else (
-    set CSC=C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe
+"%CSC%" /nologo /target:winexe /optimize+ /platform:anycpu /win32manifest:src\app.manifest ^
+  /r:System.Management.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll ^
+  /out:USB_Shortcut_Cleaner.exe src\UsbShortcutCleaner.cs
+if errorlevel 1 (
+  echo.
+  echo BUILD FAILED
+  exit /b 1
 )
-
-"%CSC%" /target:winexe /optimize+ /platform:anycpu /r:System.dll,System.Windows.Forms.dll,System.Drawing.dll /out:USB_Shortcut_Cleaner.exe Program.cs
-
-if %errorlevel% equ 0 (
-    echo.
-    echo [SUCCESS] USB_Shortcut_Cleaner.exe compiled successfully!
-) else (
-    echo.
-    echo [ERROR] Compilation failed.
-)
-pause
+echo Build OK: USB_Shortcut_Cleaner.exe
